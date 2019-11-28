@@ -1,0 +1,71 @@
+Tracks Microservice:
+
+/api/resources/tracks/all
+GET - all tracks, takes no parameters
+
+/api/resources/tracks/<int:id>
+GET - track by id
+
+/api/resources/tracks
+GET - query parameters id or title or album or artist
+- may return 0 or many tracks
+
+/api/resources/tracks/update
+GET - returns all tracks, used for development reference
+POST - UPDATE on 1 track, track can be specified with 2 sets of parameters
+Parameters - ['columnName','columnValue','id'] or ['columnName','columnValue','title', 'artist']
+- user specifies which column to update and replacement data
+- title and artist are the unique constraint for the track table
+
+/api/resources/tracks/delete
+- deletes track by id number
+
+
+Playlist Microservice:
+
+/playlist/select/<int:id>
+GET - select all playlist of given user id
+
+/playlist/all
+GET - select every playlist
+
+/playlist/delete/<int:id>
+GET - get playlist with sepcified id
+DELETE - delte playlist with specified id
+
+/playlist/create
+GET  - select playlist given id
+POST - create an empty playlist
+Parameters - [userid, title, descrtiption]
+
+/playlist/track/add
+GET -  select and display one playlist
+POST - insert track into playlist_tracks
+Parameters - trackName, artist, playlistName, userid
+- foreign key constraints in place
+{"trackName":"Yellow Submarine","artist":"The Beatles","playlistName":"first playlist","userid":"1"}
+
+
+Users Microservice:
+
+/api/resources/users/all
+GET - all users, takes no parameters
+
+/api/resources/users/<int:id>
+GET - user by id
+
+/api/resources/users
+GET - query parameters id or username
+- may return 0 or many users
+POST - query creates user
+
+/api/resources/users/update
+GET - query lists all users
+PUT - query updates user password
+
+
+Descriptions Microservice:
+
+/api/resources/descriptions
+GET  - query lists all descriptions
+POST - query inserts a username, description, url
