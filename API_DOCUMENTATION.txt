@@ -1,6 +1,8 @@
 XMLGEN:
 /getxml
 GET - creates new xml file with plalyist data in xml format
+http://127.0.0.1:5400/getxml?email=e@gmail.com&playlistname=tunes
+
 
 Tracks Microservice:
 

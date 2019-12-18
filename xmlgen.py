@@ -34,18 +34,20 @@ def home():
 
 
 #Generates an XML file given a playlist ID
+#http://127.0.0.1:5400/getxml?email=e@gmail.com&playlistname=tunes
 @app.route('/getxml',methods=['GET'])
 def get_xcspf_service():
-    return get_xml()
+    return get_xml(request.args)
     
-def get_xml():
+def get_xml(data):
     
-    #email = query_parameters.get('email')
-    #playlistname = query_parameters.get('playlistname')
+    email = data.get('email')
+    playlistname = data.get('playlistname')
      
     client = base.Client(('localhost', 11211)) #Declare the memcache object here
     # Key is string email concat to string playlistname
-    payload = {'email':'e@gmail.com','playlistname':'tunes'}
+   # payload = {'email':'e@gmail.com','playlistname':'tunes'}
+    payload = {'email':email,'playlistname':playlistname}
     outputString = ""
     
     key = payload['email'] + payload['playlistname']

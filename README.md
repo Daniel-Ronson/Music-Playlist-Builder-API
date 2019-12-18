@@ -10,6 +10,8 @@ Python installed.
 Flask installed.
 Kong Installed, running, and configured
 Minio Installed, running, and populated with tracks
+install python requets
+install cassandra driver for python
 
 Commands (in order) to run to start:
 export FLASK_APP=tracks.py
@@ -22,6 +24,11 @@ chmod +x populatedb_curl.sh foreman.sh ringbalancer.sh kongconfig.sh
 python  cassandra_config.py
 ./foreman.sh
 ./populatedb_curl.sh
+
+Now, you can generate XSPF playlists by using the XMLGEN.py microservice
+
+XMLGEN:
+http://127.0.0.1:5400/getxml?email=e@gmail.com&playlistname=tunes
 
 
 View Project Documentation for endpoint descriptions
