@@ -1,61 +1,83 @@
-#from flask import Flask, jsonify
-#app = Flask(__name__)
-
 import sys
 import flask_api
 from flask import request, jsonify
 from flask_api import status, exceptions
-import pugsql
-
+import requests
 app = flask_api.FlaskAPI(__name__)
 app.config.from_envvar('APP_CONFIG')
+from cassandra.cluster import Cluster
+from cassandra import ReadTimeout
+import json
+cluster = Cluster(['172.17.0.2'],port=9042)
+session = cluster.connect() 
+session.execute('USE Music')
 
-queries = pugsql.module('queries/')
-queries.connect(app.config['DATABASE_URL'])
+#GET: give email, track name, track artist 
+#Post: give email, track name, track artist 
+# {"email": "e@gmail.com","artist":"Led Zeppelin","title":"The Song Remains The Same","description":"this song rocks"}
+@app.route('/user/descriptions/add', methods=['GET','PUT'])
+def add_track_to_playlist():
+    if request.method == 'GET':
+        return get_all_users()
+    if request.method =='PUT':
+        return user_add_description(request.data)
+
+def user_add_description(data):
+    email = data['email']
+    title = data['title']
+    artist = data['artist']
+    description = data['description']
+    track_data = filter_select_track_for_description(title,artist)
+    uuid = track_data[0]['uuid']
+    query_update_track = "UPDATE users SET description = description + {%s : %s} WHERE email =%s"
+    session.execute_async(query_update_track,(uuid,description,email))
+    #message = {'ok':'ok'}
+    return data, status.HTTP_201_CREATED
+ 
+
+ # ?email=e@gmail.com
+#{"email": "e@gmail.com","artist":"Led Zeppelin","title":"The Song Remains The Same","description":"this song rocks"}
+@app.route('/users/get/description', methods=['GET'])
+def get_description_service():
+    if request.method == 'GET':
+        return retrieve_description(request.args)
 
 
-@app.cli.command('init')
-def init_db():
-    with app.app_context():
-        db = queries._engine.raw_connection()
-        with app.open_resource('createdb.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+
+     
+#get all users descriptions for tracks
+def retrieve_description(email_data):
+    
+    email = email_data.get('email')
+    query = "SELECT description FROM users WHERE email = %s ALLOW FILTERING"
+    res = session.execute_async(query, (email,))
+    row_array = []
+    
+    try:
+        rows = res.result()
+        item = rows[0]
+        description =  {"description":str(item.description)}
+        row_array.append(description)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return list(row_array) 
 
 
+    
 @app.route('/', methods=['GET'])
 def home():
     return '''<h1>Descriptions Microservice</h1>'''
-
-@app.route('/api/resources/descriptions', methods=['GET', 'POST'])
-def descriptions():
-    if request.method == 'GET':
-        return get_desc(request.args)
-       # return get_description(request.args)
-    elif request.method == 'POST':
-        return create_description(request.data)
-        
-def get_desc(params):
-    id = params.get('id')
-    to_filter = []
-    to_filter.append(id)
-    query = "SELECT * FROM descriptions WHERE id=?"
-    results = queries._engine.execute(query, to_filter).fetchall()
-    return list(map(dict, results))
     
-def get_description():
-    get_description = queries.descriptions()
-    return list(get_descriptions)
-
-def create_description(description):
-    description = request.data
-    required_fields = ['description', 'username', 'url']
-
-    if not all([field in description for field in required_fields]):
-        raise exceptions.ParseError()
-    try:
-        description['id'] = queries.create_description(**description)
-    except Exception as e:
-        return { 'error': str(e) }, status.HTTP_409_CONFLICT
-
-    return description, status.HTTP_201_CREATED
+#GET all users
+#placeholder function, not required 
+@app.route('/users/all', methods=['GET'])
+def all_users():
+    return get_all_users()
+    
+def get_all_users():
+    user_container = []
+    rows = session.execute('SELECT * from users')
+    for item in rows:
+        user =  {"username":item.username,"email":item.email, "firstname": item.firstname,"lastname": item.lastname,"descriptionlist":str(item.description)}
+        user_container.append(user)
+    return list(user_container)

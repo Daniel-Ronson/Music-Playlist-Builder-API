@@ -1,1 +1,1 @@
-foreman start -m "tracks=3, playlist=3, descriptions=3, users=3, xmlgen=1"
+foreman start -m "tracks=1, playlist=1, descriptions=1, users=1, xmlgen=1"

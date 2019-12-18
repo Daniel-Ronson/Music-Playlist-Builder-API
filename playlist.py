@@ -2,172 +2,204 @@ import sys
 import flask_api
 from flask import request, jsonify
 from flask_api import status, exceptions
-import pugsql
+import requests
 app = flask_api.FlaskAPI(__name__)
 app.config.from_envvar('APP_CONFIG')
-queries = pugsql.module('queries/')
-queries.connect(app.config['DATABASE_URL'])
+from cassandra.cluster import Cluster
+from cassandra import ReadTimeout
+import json
+cluster = Cluster(['172.17.0.2'],port=9042)
+session = cluster.connect() 
+session.execute('USE Music')
+
+# {"username":"sharkbro","firstname":"john","email":"e@gmail.com","lastname":"jones","playlistname":"tunes"}
+@app.route('/playlist/create', methods=['GET','POST'])
+def insert_playlist_service():
+    if request.method == 'GET':
+        return get_all_playlists() 
+    elif request.method == 'POST':
+        return insert_playlist(request.data)
+       
+def insert_playlist(playlist):
+    username = playlist['username']
+    firstname = playlist['firstname']
+    lastname = playlist['lastname']
+    email = playlist['email']
+    playlistname = playlist['playlistname']
+    #tracklist = playlist['tracklist']
+    
+    sql = "INSERT INTO playlist (username,firstname,lastname,email,playlistname) VALUES (%s,%s,%s,%s,%s)"
+    try:
+        session.execute(sql,(username,firstname,lastname,email,playlistname))
+        return playlist, status.HTTP_201_CREATED
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_409_CONFLICT
+        
+@app.route('/playlist/all', methods=['GET'])
+def get_all_playlists_service():
+    return get_all_playlists()
+         
+def get_all_playlists():
+    row_array = []
+    rows = session.execute('SELECT * from playlist')
+    for item in rows:
+        song =  {"username":item.username,"email":item.email, "playlistname": item.playlistname, "tracklist":str(item.tracklist) }
+        row_array.append(song)
+    return list(row_array)
+ 
+ 
+#select playlist based on playlist name and user
+#http://127.0.0.1:5000/playlist/select/user?email=e@gmail.com&playlistname=tunes
+@app.route('/playlist/select',methods=['GET'])
+def select_playlist_service():
+    if request.method == 'GET':
+        return filter_select_playlist(request.args)
+     
+#Search for track based off email and playlistname
+def filter_select_playlist(query_parameters):
+    
+    email = query_parameters.get('email')
+    playlistname = query_parameters.get('playlistname')
+    query = "SELECT * FROM playlist WHERE email= %s AND playlistname =%s ALLOW FILTERING"
+    res = session.execute_async(query, (email,playlistname))
+    row_array = []
+    
+    try:
+        rows = res.result()
+        item = rows[0]
+        song =  {"username":item.username,"email":item.email,"playlistname": item.playlistname,"tracklist":str(item.tracklist)}
+        row_array.append(song)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return dict(row_array)
 
 
-@app.cli.command('init')
-def init_db():
-    with app.app_context():
-        db = queries._engine.raw_connection()
-        with app.open_resource('createdb.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+#select all playlist from a specific user
+#http://127.0.0.1:5000/playlist/select/user?email=e@gmail.com
+@app.route('/playlist/select/user',methods=['GET'])
+def select_playlist_user_service():
+    if request.method == 'GET':
+        return filter_select_user_playlist(request.args)
+     
+#Search for track based off email and playlistname
+def filter_select_user_playlist(query_parameters):
+    
+    email = query_parameters.get('email')
+    query = "SELECT * FROM playlist WHERE email= %s ALLOW FILTERING"
+    res = session.execute(query, (email,))
+    row_array = []
+    
+    try:
+        for item in res:
+            playlist =  {"username":item.username,"email":item.email,"playlistname": item.playlistname,"tracklist":str(item.tracklist)}
+            row_array.append(playlist)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return list(row_array)
 
+
+
+
+
+
+#delete playlist based off email and playlistname
+@app.route('/playlist/delete',methods=['GET','DELETE'])
+def delete_playlist_service():
+    if request.method == 'GET':
+        return get_all_playlists()
+    if request.method == 'DELETE':
+        return filter_delete_playlist(request.data)
+     
+def filter_delete_playlist(data):
+    email = data['email']
+    playlistname = data['playlistname']
+    query = "DELETE FROM playlist WHERE email= %s AND playlistname =%s"
+    
+    session.execute_async(query, (email,playlistname))         
+    return '', status.HTTP_204_NO_CONTENT
+ 
+ 
+ 
+
+    
+#GET: give email and playlistname
+#Post: give email, playlistname, trackartist, tracktitle
+# {"email": "hey","playlistname":"hi","trackartist":"The Beatles","tracktitle":"Yellow Submarine"}
+@app.route('/playlist/track/add', methods=['GET','PUT'])
+def add_track_to_playlist():
+    if request.method == 'GET':
+        return filter_select_playlist(request.args)
+    if request.method =='PUT':
+        return playlist_add_track(request.data)
+
+def playlist_add_track(playlist_info):
+    playlist = playlist_info
+    if 'email' in playlist and 'playlistname' in playlist and 'trackartist' in playlist and 'tracktitle' in playlist:
+        trackName = playlist['tracktitle']
+        artist = playlist['trackartist']
+        playlistName = playlist['playlistname']
+        email = playlist['email']
+        trackData = filter_select_track_for_playlist(trackName,artist)
+        track_uuid = str(trackData[0]['uuid'])
+        query_insert_track = "UPDATE playlist SET tracklist = tracklist + {%s} WHERE playlistname=%s AND email=%s"
+        session.execute_async(query_insert_track,(track_uuid,playlistName,email))
+        return playlist, status.HTTP_201_CREATED 
+     
+#input artist and title for track info
+@app.route('/playlist/get/track/info',methods=['GET'])
+def select_track_for_playlist__service():
+    if request.method == 'GET':
+        return filter_select_track_for_playlist(request.args)
+     
+#Search for track based off given parameter
+def filter_select_track_for_playlist(trackName,trackArtist):
+    
+    title = trackName
+    artist = trackArtist
+    query = "SELECT * FROM tracks WHERE title= %s AND artist= %s ALLOW FILTERING;"
+    res = session.execute_async(query, (title,artist))
+    row_array = []
+    
+    try:
+        rows = res.result()
+        item = rows[0]
+        song =  {"uuid":item.id,"title":item.title, "album":item.album}
+        row_array.append(song)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return list(row_array)    
+
+ 
+#select playlist based on playlist name and user
+#http://127.0.0.1:5000/playlist/select/user?email=e@gmail.com&playlistname=tunes
+@app.route('/playlist/select/tracks',methods=['GET'])
+def select_playlist_tracks_service():
+    if request.method == 'GET':
+        return filter_select_playlist_tracks(request.args)
+     
+#Search for track based off email and playlistname
+def filter_select_playlist_tracks(query_parameters):
+    
+    email = query_parameters.get('email')
+    playlistname = query_parameters.get('playlistname')
+    query = "SELECT * FROM playlist WHERE email= %s AND playlistname =%s ALLOW FILTERING"
+    res = session.execute_async(query, (email,playlistname))
+    row_array = []
+    track_list = []
+    
+    try:
+        rows = res.result()
+        item = rows[0]
+        playlist =  {"username":item.username,"email":item.email,"playlistname": item.playlistname,"tracklist":item.tracklist}
+        for track in item.tracklist:
+            track_list.append(track)
+        track_dict = {'tracks' : track_list}
+        row_array.append(playlist)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return list(track_list)
 
 @app.route('/', methods=['GET'])
 def home():
     return '''<h1>SPOTIFY, but without music streaming</h1>
 <p>Playlist Microservice</p>'''
-
-#GET all playlist that matches user id number
-@app.route('/playlist/select/<int:id>', methods=['GET'])
-def playlist_selection(id):
-    to_filter = []
-    to_filter.append(id)
-    query = "SELECT * FROM playlist WHERE id=?"
-    results = queries._engine.execute(query, to_filter).fetchall()
-    return list(map(dict, results))
-   
-#list all the playlists
-@app.route('/playlist/all', methods=['GET'])
-def select_all():
-    all_playlists = queries.select_all_playlist()
-    if all_playlists:
-        return list(all_playlists)
-    return '<h1>No Playlist in database</h1>'
-
-#POST - create a playlist
-#GET - enter id of playlist to display it
-#POST dict - {"userid":"2","title":"Hip hop","description":"only hip hop"}
-@app.route('/playlist/create', methods=['GET', 'POST'])
-def playlist_creation():
-    if request.method == 'GET':
-        return filter_playlist(request.args)
-    elif request.method == 'POST':
-        return create_playlist(request.data)
-        
-def create_playlist(playlist):
-    playlist = request.data
-   # required_fields = ['userid', 'title', 'descrtiption']
-
-    #if not all([field in playlist for field in required_fields]):
-     #   raise exceptions.ParseError()
-    query = "INSERT INTO playlist (title,userid,description) VALUES (?,?,?)"
-    to_filter = []
-    to_filter.append(playlist['title'])
-    to_filter.append(playlist['userid'])
-    to_filter.append(playlist['description'])
-    queries._engine.execute(query,to_filter)
-   # try:
-    #    playlist['id'] = queries.create_playlist(**playlist)
-    #except Exception as e:
-     #   return { 'error': str(e) }, status.HTTP_409_CONFLICT
-        
-    return playlist, status.HTTP_201_CREATED  
-    
-#Populate a playlist
-#POST - required fields: track name, track artist; playlist name, userid    
-#{"trackName":"song title","artist":"artist name","playlistName":"first playlist","userid":"1"}
-#{"trackName":"Yellow Submarine","artist":"The Beatles","playlistName":"first playlist","userid":"1"}
-@app.route('/playlist/track/add', methods=['GET','POST'])
-def add_track_to_playlist():
-    if request.method == 'GET':
-        return filter_playlist_tracks(request.args)
-    if request.method =='POST':
-        return playlist_add_track(request.data)
-
-def playlist_add_track(playlist_info):
-    playlist = playlist_info
-    if 'trackName' in playlist and 'artist' in playlist and 'playlistName' in playlist and 'userid' in playlist:
-        trackName = playlist['trackName']
-        artist = playlist['artist']
-        playlistName = playlist['playlistName']
-        userid = playlist['userid']
-        select_track_query = "SELECT id FROM tracks WHERE title=? AND artist=?"
-        to_filter_track =[]
-        to_filter_track.append(trackName)
-        to_filter_track.append(artist)
-        #track_info = queries._engine.execute(select_track_query,to_filter_track).fetchone()
-        
-      #  for row in track_info:
-       #     track_id= row[0]
-       
-        select_playlist_query = "SELECT id FROM playlist WHERE title=? AND userid=?"
-        to_filter_track.append(playlistName)
-        to_filter_track.append(userid)
-       # playlist_info = queries._engine.execute(select_track_query,to_filter_playlist).fetchone()
-        
-        #for row in playlist_info:
-         #   playlistid = row[0]
-         
-        query_insert_track = ("INSERT INTO playlist_tracks (track_id,playlist_id) VALUES "
-                            "((SELECT id FROM tracks WHERE title=? AND artist=?),"
-                            "(SELECT id FROM playlist WHERE title=? AND userid=?))")
-
-        queries._engine.execute(query_insert_track,to_filter_track)
-        return playlist, status.HTTP_201_CREATED 
-    
-
-def filter_playlist_tracks(query_parameters):
-    id = query_parameters.get('playlistid')    
-    query = "SELECT * FROM playlist_tracks WHERE"
-    to_filter = []
-    if id:
-        query += ' playlist_id=?'
-        to_filter.append(id)
-    if not (id):
-        raise exceptions.NotFound()
-    results = queries._engine.execute(query, to_filter).fetchall()
-    return list(map(dict, results))
-    
-#Retrieve a playlist
-#required field - playlist id
-@app.route('/playlist/display', methods=['GET', 'POST'])
-def playlist_select_one():
-    if request.method == 'GET':
-        return filter_playlist(request.args)
-        
-def filter_playlist(query_parameters):
-    id = query_parameters.get('id')
-    query = "SELECT * FROM playlist WHERE"
-    to_filter = []
-
-    if id:
-        query += ' id=?'
-        to_filter.append(id)
-
-    if not (id):
-        raise exceptions.NotFound()
-
-    query_two = "SELECT * FROM playlist_tracks WHERE playlist_id=?"
-    results_playlist = queries._engine.execute(query, to_filter).fetchall()
-    results_tracks = queries._engine.execute(query_two, to_filter).fetchall()
-    full_playlist = {
-    "playlist description":results_playlist,
-    "playlist tracks":results_tracks
-    }
-    return list(map(dict, results_playlist)) and list(map(dict, results_tracks))
-    
-@app.route('/playlist/delete/<int:id>', methods=['GET','DELETE'])
-def deletes(id):
-    if request.method =='GET':
-        all_playlists = queries.select_all_playlist()
-        if all_playlists:
-            return list(all_playlists)
-    if request.method == 'DELETE':
-        return delete_playlist(id)
-        
-def delete_playlist(id):
-    playlistid = id
-    filter_query =[]
-   # query = "DELETE FROM playlist WHERE id=?"
-    query = "DELETE FROM playlist WHERE userid = ?"
-    filter_query.append(playlistid)
-    queries._engine.execute(query,filter_query)
-   # except Exception as e:
-    #    return { 'error': str(e) }, status.HTTP_404_NOT_FOUND
-    return '', status.HTTP_204_NO_CONTENT

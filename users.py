@@ -9,168 +9,155 @@ import pugsql
 
 from werkzeug.security import generate_password_hash,check_password_hash
 
+from cassandra.cluster import Cluster
+from cassandra import ReadTimeout
+cluster = Cluster(['172.17.0.2'],port=9042)
+session = cluster.connect() 
+session.execute('USE Music')
 
 app = flask_api.FlaskAPI(__name__)
 app.config.from_envvar('APP_CONFIG')
 
-queries = pugsql.module('queries/')
-queries.connect(app.config['DATABASE_URL'])
 
+#delete playlist based off email and playlistname
+@app.route('/users/create',methods=['GET','POST'])
+def create_user_service():
+    if request.method == 'GET':
+        return get_all_users()
+    if request.method == 'POST':
+        return filter_create_user(request.data)
+     
+def filter_create_user(user):
+    username = user['username']
+    firstname = user['firstname']
+    lastname = user['lastname']
+    email = user['email']
+    password = user['password']    
+    hashed_password = generate_password_hash(password)
+    sql = "INSERT INTO users (username,firstname,lastname,email,password) VALUES (%s,%s,%s,%s,%s)"
+    
+    try:
+        session.execute(sql,(username,firstname,lastname,email,hashed_password))
+        return playlist, status.HTTP_201_CREATED
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_409_CONFLICT
+    
+    
+#select one user by email
+#?email=e@gmail.com
+@app.route('/users/select', methods=['GET'])
+def retrieve_users():
+    return get_one_users(request.args)
+        
+def get_one_users(user):
+    email = user.get('email')
+    query = "SELECT * FROM users WHERE email= %s ALLOW FILTERING"
+    res = session.execute_async(query, (email,))
+    row_array = []
+    
+    try:
+        rows = res.result()
+        item = rows[0]
+        user =  {"username":item.username,"email":item.email, "firstname": item.firstname,"lastname": item.lastname,"descriptionlist":str(item.description)}
+        row_array.append(user)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return list(row_array)
+ 
+#{"email":"e@gmail.com","password":"pass"}
+@app.route('/users/authenticate', methods=['GET','POST'])
+def authenticate_users_service():
+    if request.method == 'GET':
+        return get_all_users()
+    elif request.method == 'POST':
+        return authenticate(request.data)
+    
+def authenticate(data):
+    check_password = data['password']
+    email = data['email']
+    
+    user_data = get_one_users_password(email)
+    hashed_password = user_data[0]['password']
+    var = check_password_hash(hashed_password,check_password)
+    if var:
+        return_message = {'Correct Password' : 'TRUE' , 'Username' :user_data[0]['username']}
+        return return_message, status.HTTP_200_OK
+    
+    return_message = {'Correct Password' : 'FALSE' , 'Username' :user_data[0]['username']}    
+    return return_message, status.HTTP_200_OK 
+    
+def get_one_users_password(email):
+    email = email
+    query = "SELECT username, password FROM users WHERE email= %s ALLOW FILTERING"
+    res = session.execute_async(query, (email,))
+    row_array = []
+    
+    try:
+        rows = res.result()
+        item = rows[0]
+        user =  {"username":item.username,"password":item.password}
+        row_array.append(user)
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND   
+    return list(row_array)
+    
 
-@app.cli.command('init')
-def init_db():
-    with app.app_context():
-        db = queries._engine.raw_connection()
-        with app.open_resource('createdb.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+#change password
+#{"changeValueTo":"asd","email" : "e@gmail.com", "password":"pass"}
+@app.route('/users/update', methods=['GET','PUT'])
+def users_updates_service():
+    if request.method == 'GET':
+        return get_all_users()
+    if request.method == 'PUT':
+        return update_users(request.data) 
+        
+def update_users(user):
 
+    authentication_data = authenticate(user)
+    is_valid_password = bool(authentication_data[0]['Correct Password'])
 
+    if is_valid_password:
+        changeValueTo = user['changeValueTo']
+        hashed_password = generate_password_hash(changeValueTo)
+        email = user['email']            
+        query_update_track = "UPDATE users SET password = %s WHERE email=%s"
+        session.execute_async(query_update_track,(hashed_password,email))
+
+    return user, status.HTTP_201_CREATED   
+   
+   
+#GET all users
+@app.route('/users/all', methods=['GET'])
+def all_users():
+    return get_all_users()
+    
+def get_all_users():
+    user_container = []
+    rows = session.execute('SELECT * from users')
+    for item in rows:
+        user =  {"username":item.username,"email":item.email, "firstname": item.firstname,"lastname": item.lastname,"descriptionlist":str(item.description)}
+        user_container.append(user)
+    return list(user_container)
+ 
+ 
+#delete user based off email
+@app.route('/users/delete',methods=['GET','DELETE'])
+def delete_user_service():
+    if request.method == 'GET':
+        return get_all_users()
+    if request.method == 'DELETE':
+        return filter_delete_user(request.data)
+     
+def filter_delete_user(data):
+    email = data['email']
+    query = "DELETE FROM users WHERE email= %s "
+    
+    session.execute_async(query, (email,))         
+    return '', status.HTTP_204_NO_CONTENT 
+  
+ 
+    
 @app.route('/', methods=['GET'])
 def home():
     return '''<h1>SPOTIFY, but without music streaming</h1>
 <p>USERS MICROSERViCE</p>'''
-
-@app.route('/api/resources/user', methods=['GET'])
-def user():
-    if request.method == 'GET':
-        query_paramenrs = request.args
-
-
-@app.route('/api/resources/users/all', methods=['GET'])
-def all_users():
-    all_users = queries.all_users()
-    return list(all_users)
-
-#GET user that matches id number
-@app.route('/api/resources/users/<int:id>', methods=['GET'])
-def one_user(id):
-    return queries.user_by_id(id=id)
-
-@app.route('/api/resources/users', methods=['GET', 'POST'])
-def users():
-    if request.method == 'GET':
-        return filter_users(request.args)
-    elif request.method == 'POST':
-        return create_user(request.data)
-
-@app.route('/api/resources/users/update', methods=['GET','PUT'])
-def updates():
-    if request.method == 'GET':
-        return (list(queries.all_users()))
-    if request.method == 'PUT':
-        return update_user(request.data)
-
-@app.route('/api/resources/users/delete/<int:id>', methods=['GET','DELETE'])
-def deletes(id):
-    if request.method =='GET':
-        return (list(queries.all_users()))
-    if request.method == 'DELETE':
-        return delete_user(id)
-
-def delete_user(id):
-    user_to_delete = id
-    filter_query =[]
-    try:
-        query = "DELETE FROM users WHERE id=?"
-        filter_query.append(user_to_delete)
-        queries._engine.execute(query,filter_query)
-    except Exception as e:
-        return { 'error': str(e) }, status.HTTP_404_NO_CONTENT
-    return '', status.HTTP_204_NO_CONTENT
-
-
-#{"username": "ausername", "password": "abc123","firstname": "Daniel","lastname": "Ronson","email": "aemail@hotmail.com","id": 2}
-def create_user(user):
-    user = request.data
-    required_fields = ['username', 'password', 'firstname', 'lastname','email']
-    username = user['username']
-    password = user['password']
-
-#To check username and password matching
-    if not all([field in user for field in required_fields]):
-        return authenticate_user(username,password)
-
-    firstname = user['firstname']
-    lastname = user['lastname']
-    email = user['email']
-    hashed_password = generate_password_hash(password)
-    query ="INSERT INTO users(username, password, firstname, lastname, email) VALUES('"+username+"','"+hashed_password+"', '"+firstname+"', '"+lastname+"', ? );"
-    to_filter = []
-    to_filter.append(email)
-    if not all([field in user for field in required_fields]):
-        raise exceptions.ParseError()
-    try:
-        queries._engine.execute(query, to_filter)
-        #user['id'] = queries.create_user(**user)
-    except Exception as e:
-        return { 'error': str(e) }, status.HTTP_409_CONFLICT
-
-    return user, status.HTTP_201_CREATED
-
-def update_user(user):
-    search_by_id = ['columnName','columnValue','id']
-    search_by_unique_constraint = ['columnName','columnValue','hashed_password']
-    user = request.data
-    to_filter = []
-
-    if 'changeColumn' in user and 'changeValueTo' in user and 'hashed_password' in user:
-        hashed_password = user['hashed_password']
-        columnName = user['changeColumn']
-        columnValue =user['changeValueTo']
-        query = "UPDATE users SET {}=? WHERE hashed_password=?".format(columnName)
-        to_filter.append(columnValue)
-        to_filter.append(hashed_password)
-        queries._engine.execute(query,to_filter)
-
-    elif 'id' in user and 'username' in user:
-        columnName = user['changeColumn']
-        columnValue = hashed_password['changeValueTo']
-        id = user['id']
-        queries._engine.execute("UPDATE users SET %s=? WHERE id=?" % (columnName,),(columnValue,id))
-    return user, status.HTTP_201_CREATED
-
-def authenticate_user(username,password):
-    query = "SELECT password FROM user WHERE username=?;"
-    to_filter= []
-    to_filter.append(username)
-    results = query_db(query, to_filter).fetch_all
-    if not results:
-        return jsonify(message="User Authentication unsuccessful. Try with new password"),401
-
-    authenticated = check_password_hash(results[0]['hashed_password'],password)
-    if authenticated:
-        return jsonify(message="User Authentication successful"),200
-
-    return jsonify(message="User Authentication unsuccessful. Try with new password"),401
-
-    return list(map(dict, results))
-
-#Search for users based off given parameter
-def filter_users(query_parameters):
-    id = query_parameters.get('id')
-    username = query_parameters.get('username')
-    hashed_password = query_parameters.get('hashed_password')
-
-    query = "SELECT * FROM users WHERE"
-    to_filter = []
-
-    if username and password:
-        return authenticate_user(username,password)
-
-    if id:
-        query += ' id=? AND'
-        to_filter.append(id)
-    if username:
-        query += ' username=? AND'
-        to_filter.append(username)
-    if hashed_password:
-        query += ' hashed_password=? AND'
-        to_filter.append(hashed_password)
-    if not (id or username or hashed_password):
-        raise exceptions.NotFound()
-    query = query[:-4] + ';'
-
-    results = queries._engine.execute(query, to_filter).fetchall()
-
-    return list(map(dict, results))

@@ -1,24 +1,25 @@
 Tracks Microservice:
 
-/api/resources/tracks/all
+/tracks/insert
 GET - all tracks, takes no parameters
+POST - insert track into database
+POST.data: {"title":"The Song Remains The Same","album":"Houses Of The Holy","artist":"Led Zeppelin","duration":"3:40","url":"http://10.0.2.15:9000/tracks/01%20The%20Song%20Remains%20The%20Same.mp3"}
 
-/api/resources/tracks/<int:id>
-GET - track by id
+/get/track/<string:url>
+GET - track by url
+
 
 /api/resources/tracks
 GET - query parameters id or title or album or artist
 - may return 0 or many tracks
 
-/api/resources/tracks/update
+/tracks/update
 GET - returns all tracks, used for development reference
-POST - UPDATE on 1 track, track can be specified with 2 sets of parameters
-Parameters - ['columnName','columnValue','id'] or ['columnName','columnValue','title', 'artist']
-- user specifies which column to update and replacement data
-- title and artist are the unique constraint for the track table
+POST - UPDATE duration of a track
+POST.data: {"changeValueTo":"59:99", "artist": "Led Zeppelin","title":"The Song Remains The Same"}
 
-/api/resources/tracks/delete
-- deletes track by id number
+/tracks/delete
+- deletes track given artist and title
 
 
 Playlist Microservice:

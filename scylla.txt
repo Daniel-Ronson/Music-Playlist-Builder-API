@@ -1,0 +1,63 @@
+/*track + descriptions table, has column with map datatype that maps the userid to the description
+user table:
+playlist table, has column with map datatype that maps the trackid
+*/
+
+	
+CREATE TABLE tracks (
+	id uuid,
+	title text,
+	album text,
+	artist text,
+	duration text,
+	url text,
+	PRIMARY KEY(title,artist)
+	);
+INSERT INTO tracks (id,title,album,artist,duration,url) VALUES (now(),'song','album','artist','duration','url');
+INSERT INTO tracks (title,album,artist,a,url) VALUES ('song','album','artist',{'key2':('val1','val2','val3')},'url');
+
+CREATE TABLE playlist(
+	username text,
+	firstname text,
+	lastname text,
+	email text,
+	playlistname text,
+	tracklist set<text>,
+	PRIMARY KEY(playlistname,email)
+);
+
+INSERT INTO playlist (username,firstname,lastname,email,playlistname) VALUES ('test','test','test','hey','hi');
+UPDATE playlist SET tracklist = tracklist + {'second'} WHERE playlistname='hi' AND email='hey';
+{"username":"auser","password":"aPASS","firstname":"danny","lastname":"ron","email":"d@gmail.com","playlistname":"goodsongs"}
+
+CREATE TABLE users(
+	username text,
+	password text,
+	firstname text,
+	lastname text,
+	email text,
+	description map <uuid,text>,
+	PRIMARY KEY(email)	
+);
+INSERT INTO users (username,password,firstname,lastname,email,description) VALUES ('username','password','firstname','lastname','email',{af74077b-d498-4401-a77f-fbf99cb385cf:'value'});
+
+curl \
+  --header "Content-type: application/json" \
+  --request POST \
+  --data '{"username": "MickeyMouse23", "password": "tiger","firstname": "Danny","lastname": "R","email": "jdanny@gmail.com"}' \
+  http://127.0.0.1:5200/api/resources/users
+curl \
+  --header "Content-type: application/json" \
+  --request POST \
+  --data '{"userid":"1","title":"Heavy Metal","description":"Mostly Led Zeppelin"}' \
+  http://127.0.0.1:5000/playlist/create
+curl \
+  --header "Content-type: application/json" \
+  --request POST \
+  --data '{"trackName":"The Crunge","artist":"Led Zeppelin","playlistName":"Heavy Metal","userid":1}' \
+  http://127.0.0.1:5000/playlist/track/add
+curl \
+  --header "Content-type: application/json" \
+  --request POST \
+  --data '{"trackName":"The Rain Song","artist":"Led Zeppelin","playlistName":"Heavy Metal","userid":1}' \
+  http://127.0.0.1:5000/playlist/track/add

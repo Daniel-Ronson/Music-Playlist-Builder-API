@@ -1,24 +1,180 @@
-#from flask import Flask, jsonify
-#app = Flask(__name__)
-
 import sys
+import json
 import flask_api
 from flask import request, jsonify
 from flask_api import status, exceptions
-import pugsql
+import uuid
 app = flask_api.FlaskAPI(__name__)
+from cassandra import ReadTimeout
 app.config.from_envvar('APP_CONFIG')
-queries = pugsql.module('queries/')
-queries.connect(app.config['DATABASE_URL'])
 
+
+from cassandra.cluster import Cluster
+cluster = Cluster(['172.17.0.2'],port=9042)
+session = cluster.connect() 
+session.execute('USE Music')
 
 @app.cli.command('init')
 def init_db():
-    with app.app_context():
-        db = queries._engine.raw_connection()
-        with app.open_resource('createdb.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+    return  '<h1> To init db run CREATe_DB.py </h1>'
+
+@app.route('/conn', methods=['GET'])
+def test_conn():
+    return get_all_tracks()
+    
+@app.route('/tracks/insert', methods=['GET','POST'])
+def insert_route():
+    if request.method == 'GET':
+        return get_all_tracks() 
+    elif request.method == 'POST':
+        return insert_track(request.data)
+
+  
+    
+#{"album":"Yellow Submarine","artist":"The Beatles","duration":"3:20","title":"Yellow Submarine","url":"C://songs/s23"}
+#todo: add map to link descriptions to users, in users.py
+def insert_track(track):
+    trackid = uuid.uuid4()
+    title = track['title']
+    album = track['album']
+    artist = track['artist']
+    duration = track['duration']
+    url = track['url']
+
+    sql = "INSERT INTO tracks (id,album,artist,duration,title,url) VALUES (%s,%s,%s,%s,%s,%s)"   
+    try:
+        session.execute(sql,(trackid,album,artist,duration,title,url))
+        return title, status.HTTP_201_CREATED
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_409_CONFLICT
+        
+def get_all_tracks():
+    row_array = []
+    rows = session.execute('SELECT * from tracks')
+    for track in rows:
+        #song  = {"test":"test"}
+        song =  {"uuid":track.id,"title":track.title, "artist":track.artist,"album": track.album,"duration": track.duration, "url":track.url }
+        row_array.append(song)
+
+    return list(row_array)
+    
+#GET track that matches id number
+@app.route('/get/track/<uuid:id>', methods=['GET'])
+def get_track_by_id_service(id):
+    return get_track_by_id(id);
+    
+def get_track_by_id(id):
+    
+    uuid = id
+    #query = "SELECT * FROM tracks WHERE title = 'newsong' AND artist= %s ALLOW FILTERING;"
+    query = "SELECT * FROM tracks WHERE id= %s ALLOW FILTERING;"
+    res = session.execute_async(query, [uuid])
+    row_array = []
+    try:
+        rows = res.result()
+        track = rows[0]
+        song =  {"uuid":track.id,"title":track.title, "artist":track.artist,"album": track.album,"duration": track.duration, "url":track.url }
+        row_array.append(song)
+        
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND
+        
+    return list(row_array)
+
+#takes id as query string 
+@app.route('/get/track/id', methods=['GET'])
+def get_track_by_id_service_2():
+    return get_track_by_id_2(request.args);
+    
+def get_track_by_id_2(data):
+    
+    track_uuid = data.get('id')
+    track_uuid_conversion = uuid.UUID(track_uuid)
+    #query = "SELECT * FROM tracks WHERE title = 'newsong' AND artist= %s ALLOW FILTERING;"
+    query = "SELECT * FROM tracks WHERE id= %s ALLOW FILTERING;"
+    res = session.execute_async(query, [track_uuid_conversion])
+    row_array = []
+    try:
+        rows = res.result()
+        track = rows[0]
+        song =  {"uuid":str(track.id),"title":track.title, "artist":track.artist,"album": track.album,"duration": track.duration, "url":track.url }
+        row_array.append(song)
+        
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND
+        
+    return list(row_array)
+
+
+
+        
+#GET track that matches url
+@app.route('/get/track/url/<string:url>', methods=['GET'])
+def get_track_by_url_service(url):
+    return get_track_by_url(url);
+    
+def get_track_by_url(url):
+    
+    track_url = url
+    #query = "SELECT * FROM tracks WHERE title = 'newsong' AND artist= %s ALLOW FILTERING;"
+    query = "SELECT * FROM tracks WHERE url= %s ALLOW FILTERING;"
+    res = session.execute_async(query, [track_url])
+    row_array = []
+    try:
+        rows = res.result()
+        track = rows[0]
+        song =  {"uuid":track.id,"title":track.title, "artist":track.artist,"album": track.album,"duration": track.duration, "url":track.url }
+        row_array.append(song)
+        
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND
+        
+    return list(row_array)    
+    
+     
+@app.route('/tracks/update', methods=['GET','PUT'])
+def updates():
+    if request.method == 'GET':
+        return get_all_tracks()
+    if request.method == 'PUT':
+        return update_track(request.data) 
+        
+#this method updates the duration, Cassandra can't update prmary keys
+#{"changeValueTo":"Yellow Submarine", "artist": "The Beatles","title":"old song"}
+def update_track(track):
+    try: 
+        title = track['title']
+        artist = track['artist']
+        changeValueTo = track['changeValueTo']    
+        query_update_track = "UPDATE tracks SET duration = %s WHERE artist=%s AND title=%s"
+        session.execute_async(query_update_track,(changeValueTo,artist,title))
+        
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_304_NOT_MODIFIED
+    return track, status.HTTP_201_CREATED
+
+
+        
+@app.route('/tracks/delete', methods=['GET','DELETE'])
+def deletes():
+    if request.method =='GET':
+        return get_all_tracks()
+    if request.method == 'DELETE':
+        return delete_track(request.data)
+        
+def delete_track(track):
+    title = track['title']
+    artist = track['artist']
+    try:
+        query = "DELETE FROM tracks WHERE artist=%s AND title=%s"
+        session.execute_async(query,(artist,title))
+    except Exception as e:
+        return { 'error': str(e) }, status.HTTP_404_NOT_FOUND
+    return '', status.HTTP_204_NO_CONTENT
+
+
+
+
 
 
 @app.route('/', methods=['GET'])
@@ -27,122 +183,7 @@ def home():
     <h2>TRACKS MICROSERVICE</h2>
 <p>A prototype API for delivering track, playlist, and user data.</p>'''
 
-@app.route('/api/resources/tracks/all', methods=['GET'])
-def all_tracks():
-    all_tracks = queries.all_tracks()
-    return list(all_tracks)
-    
-#GET track that matches id number
-@app.route('/api/resources/tracks/<int:id>', methods=['GET'])
-def track(id):
-    return queries.track_by_id(id=id)
-        
-@app.route('/api/resources/tracks', methods=['GET', 'POST'])
-def tracks():
-    if request.method == 'GET':
-        return filter_tracks(request.args)
-    elif request.method == 'POST':
-        return create_track(request.data)
 
-@app.route('/api/resources/tracks/update', methods=['GET','PUT'])
-def updates():
-    if request.method == 'GET':
-        return (list(queries.all_tracks())) 
-    if request.method == 'PUT':
-        return update_track(request.data)   
-        
-@app.route('/api/resources/tracks/delete/<int:id>', methods=['GET','DELETE'])
-def deletes(id):
-    if request.method =='GET':
-        return (list(queries.all_tracks())) 
-    if request.method == 'DELETE':
-        return delete_track(id)
-        
-def delete_track(id):
-    track_to_delete = id
-    filter_query =[]
-    try:
-        query = "DELETE FROM tracks WHERE id=?"
-        filter_query.append(track_to_delete)
-        queries._engine.execute(query,filter_query)
-    except Exception as e:
-        return { 'error': str(e) }, status.HTTP_404_NO_CONTENT
-    return '', status.HTTP_204_NO_CONTENT
 
-#When posting to flask api, erase trailing whitespaces,
-#{"title":"Blue Submarine","album":"Yellow Submarine","artist":"The Beatles","duration":"3:20","url":"C://songs/s24","arturl":"C;//song/img/s24"},{"title":"Yellow Submarine","album":"Yellow Submarine","artist":"The Beatles","duration":"3:20","url":"C://songs/s23","arturl":"C;//song/img/s23"}
-#{"title":"Yellow Submarine","album":"Yellow Submarine","artist":"The Beatles","duration":"3:20","url":"C://songs/s23","arturl":"C;//song/img/s23"}
-def create_track(track):
-    track = request.data
-    required_fields = ['title', 'album', 'artist', 'duration','url']
-
-    if not all([field in track for field in required_fields]):
-        raise exceptions.ParseError()
-    try:
-        track['id'] = queries.create_track(**track)
-    except Exception as e:
-        return { 'error': str(e) }, status.HTTP_409_CONFLICT
-        
-    return track, status.HTTP_201_CREATED
-
-#PUT Method - Requires 'id' or 'artist title'
-def update_track(track):
-    search_by_id = ['columnName','columnValue','id']
-    search_by_unique_constraint = ['columnName','columnValue','title', 'artist']
-    track = request.data
-    to_filter = []
-    
-#{"changeColumn":"title","changeValueTo":"Yellow Submarine", "artist": "The Beatles","title":"old song"}
-    if 'changeColumn' in track and 'changeValueTo' in track and 'title' in track and 'artist' in track:
-        title = track['title']
-        artist = track['artist']
-        columnName = track['changeColumn']
-        columnValue = track['changeValueTo']
-        query = "UPDATE tracks SET {}=? WHERE title=? AND artist=?".format(columnName)
-        to_filter.append(columnValue)
-        to_filter.append(title)
-        to_filter.append(artist)
-        queries._engine.execute(query,to_filter)
-#{"changeColumn":"title","changeValueTo":"Yellow Submarine","id":"2"}
-    elif 'changeColumn' in track and 'changeValueTo' in track and 'id' in track:
-        columnName = track['changeColumn']
-        query = "UPDATE tracks SET {}=? WHERE id =?".format(columnName)
-        to_filter.append(track['changeValueTo'])
-        to_filter.append(track['id'])
-        queries._engine.execute(query,to_filter)
-    return track, status.HTTP_201_CREATED   
-
- 
-#Search for track based off given parameter
-def filter_tracks(query_parameters):
-    id = query_parameters.get('id')
-    title = query_parameters.get('title')
-    album = query_parameters.get('album')
-    artist = query_parameters.get('artist')
-    #duration = query_parameters.get('duration')
-    #url = query_parameters.get('url')
-    #arturl = query_parameters.get('arturl')
-    
-    query = "SELECT * FROM tracks WHERE"
-    to_filter = []
-
-    if id:
-        query += ' id=? AND'
-        to_filter.append(id)
-    if title:
-        query += ' title=? AND'
-        to_filter.append(title)
-    if album:
-        query += ' album=? AND'
-        to_filter.append(album) 
-    if not (id or title or album or artist):
-        raise exceptions.NotFound()
-    query = query[:-4] + ';'
-
-    results = queries._engine.execute(query, to_filter).fetchall()
-    #one = results['title']
-    #return results
-    #return list(results)
-    return list(map(dict, results))
     
 
