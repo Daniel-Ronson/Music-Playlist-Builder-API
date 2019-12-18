@@ -19,7 +19,7 @@ chmod +x populatedb_curl.sh foreman.sh ringbalancer.sh kongconfig.sh
 ./kongconfig.sh
 ./ringbalancer.sh
 
-flask init
+python  cassandra_config.py
 ./foreman.sh
 ./populatedb_curl.sh
 

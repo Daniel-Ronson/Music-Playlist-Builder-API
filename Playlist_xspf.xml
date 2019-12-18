@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+	<title>playlist</title>
+	<trackList>
+		<track>
+			<location> http://10.0.2.15:9000/tracks/03%20Over%20The%20Hills%20And%20Far%20Away.mp3</location>
+			<title>Over The Hills and Far Away</title>
+			<creator>Led Zeppelin</creator>
+			<album> Houses Of The Holy</album>
+		</track>
+		<track>
+			<location> http://10.0.2.15:9000/tracks/04%20The%20Crunge.mp3</location>
+			<title>The Crunge</title>
+			<creator>Led Zeppelin</creator>
+			<album> Houses Of The Holy</album>
+		</track>
+	</trackList>
+</playlist>

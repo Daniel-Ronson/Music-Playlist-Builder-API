@@ -1,3 +1,7 @@
+XMLGEN:
+/getxml
+GET - creates new xml file with plalyist data in xml format
+
 Tracks Microservice:
 
 /tracks/insert
@@ -24,20 +28,24 @@ POST.data: {"changeValueTo":"59:99", "artist": "Led Zeppelin","title":"The Song 
 
 Playlist Microservice:
 
-/playlist/select/<int:id>
+http://127.0.0.1:5000/playlist/select/user?email=e@gmail.com&playlistname=tunes
+/playlist/select
 GET - select all playlist of given user id
 
 /playlist/all
 GET - select every playlist
 
-/playlist/delete/<int:id>
+
+/playlist/delete/
 GET - get playlist with sepcified id
 DELETE - delte playlist with specified id
+	- requires curl command prompt with email and playlistname
 
 /playlist/create
+- create empty playlist with user info and playlist info
 GET  - select playlist given id
 POST - create an empty playlist
-Parameters - [userid, title, descrtiption]
+Parameters - [username, firstname, lastname,email]
 
 /playlist/track/add
 GET -  select and display one playlist
@@ -46,27 +54,36 @@ Parameters - trackName, artist, playlistName, userid
 - foreign key constraints in place
 {"trackName":"Yellow Submarine","artist":"The Beatles","playlistName":"first playlist","userid":"1"}
 
+/playlist/select/tracks
+- used for XSPF service
+- delivers only tracklist
+parametrs: [playlistname,email]
 
 Users Microservice:
 
 /api/resources/users/all
 GET - all users, takes no parameters
 
-/api/resources/users/<int:id>
-GET - user by id
+/users/create
+POST - creates user, parameters[username,firstname,lastname,email,password]
+refer to curl command in the populate_curl folder
 
-/api/resources/users
-GET - query parameters id or username
-- may return 0 or many users
-POST - query creates user
-
-/api/resources/users/update
+/users/select?email= 
 GET - query lists all users
 PUT - query updates user password
 
+/users/authenticate
+POST - {email: , password: }
+
+/users/update
+-Updates password, also authenticates first
+PUT - {"changeValueTo":"asd","email" : "e@gmail.com", "password":"pass"}
 
 Descriptions Microservice:
 
-/api/resources/descriptions
-GET  - query lists all descriptions
-POST - query inserts a username, description, url
+/user/descriptions/add
+POST - query inserts a username, description, urle
+example: {"email": "e@gmail.com","artist":"Led Zeppelin","title":"The Song Remains The Same","description":"this song rocks"}
+
+/users/get/description?email=
+GET -  gets all descriptions associated with a user
