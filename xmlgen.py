@@ -20,6 +20,8 @@ cluster = Cluster(['172.17.0.2'],port=9042)
 session = cluster.connect() 
 session.execute('USE Music')
 
+from pymemcache.client import base
+
 @app.cli.command('init')
 def init_db():
     with app.app_context():
@@ -88,7 +90,7 @@ def get_xml():
         outputString += "Data not found! Calling microservices.\r\r\nPlaylist id: " + "\r\r\n"
 
         #GET list of song's uuid
-        songsInPlaylist = requests.get('http://localhost:5000/playlist/playlist/select/tracks', params=payload)
+        songsInPlaylist = requests.get('http://localhost:8000/playlist/playlist/select/tracks', params=payload)
         songsInPlaylistJSON = songsInPlaylist.json() #list of songs
     
         #get track info: title, artist, album
@@ -98,7 +100,7 @@ def get_xml():
 
         for track in songsInPlaylistJSON:
             payload = {'id' : track }
-            trackData = requests.get('http://localhost:5100/tracks/get/track/id', params=payload)
+            trackData = requests.get('http://localhost:8000/tracks/get/track/id', params=payload)
             trackDataJSON = trackData.json()
             outputString += "Title: " + str(trackDataJSON[0]['title']) + "\r\r\n"
             outputString += "Artist: " + str(trackDataJSON[0]['artist']) + "\r\r\n"
