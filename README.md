@@ -26,13 +26,14 @@ Author: Daniel Ronson
 6. `./populatedb_curl.sh` Populates database with content
 
 ## Now you can 
-- Use any of the endpoints describbed in API documentation
+- Consume any endpoint describbed in API documentation through load balancer or by exact address
 - Generate XSPF playlists by using the XMLGEN.py microservice
 - Note: Music files must be stored in minio to actually listen to the playlist
 
-## Generate Playlist
-XMLGEN:
-http://127.0.0.1:5400/getxml?email=e@gmail.com&playlistname=tunes
+## Load balancer 
+ - access load balancer at localhost:8000/<serviceName>/<serviceEndpoint
+ - example query: `localhost:8000/playlist/playlist/all`
+
 
 
 
